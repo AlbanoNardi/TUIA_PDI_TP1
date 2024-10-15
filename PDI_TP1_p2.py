@@ -47,34 +47,35 @@ plt.show()
 
 ######################################################################################################
 
-# Función para cargar la imagen y aplicar umbral
-def cargar_y_umbralizar_imagen(ruta_imagen, thresh=128, maxval=255):
-    img_gris = cv2.imread(ruta_imagen, cv2.IMREAD_GRAYSCALE)
-    _, img_umbralizada = cv2.threshold(img_gris, thresh=thresh, maxval=maxval, type=cv2.THRESH_BINARY)
-    return img_gris, img_umbralizada
+def umbralizar_imagen(img, thresh=128, maxval=255):
+    if len(img.shape) == 3:  # Si la imagen está en color, conviértela a escala de grises
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    _, img_umbralizada = cv2.threshold(img, thresh=thresh, maxval=maxval, type=cv2.THRESH_BINARY)
+    return img, img_umbralizada
 
 # Función para obtener y dibujar contornos en la imagen
-def obtener_y_dibujar_contornos(img_umbralizada, img_color, grosor=2):
-    contornos, _ = cv2.findContours(img_umbralizada, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+def obtener_y_dibujar_contornos(img_umbralizada, img, grosor=1):
+    contornos,_ = cv2.findContours(img_umbralizada, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
     contornos_ordenados = sorted(contornos, key=cv2.contourArea, reverse=True)
     
     for i, contorno in enumerate(contornos_ordenados[:13]):  # Limitar a 13 contornos para simplificar
         color = (255, 0, 0) if i == 0 else (0, 255, 0)  # Usamos colores diferentes
-        cv2.drawContours(img_color, contornos_ordenados, contourIdx=i, color=color, thickness=grosor)
+        cv2.drawContours(img, contornos_ordenados, contourIdx=i, color=color, thickness=grosor)
     
-    plt.imshow(img_color)
+    plt.imshow(img)
     plt.show()
     
     return contornos_ordenados
 
 # Función para recortar la región de una pregunta dada su índice
-def recortar_pregunta_por_indice(index_pregunta, contornos_ordenados, img_gris, dicc_indices):
+def recortar_pregunta_por_indice(index_pregunta, contornos_ordenados, img_umbralizada, dicc_indices):
     if index_pregunta not in dicc_indices:
         return None
     
     contorno_pregunta = contornos_ordenados[dicc_indices[index_pregunta]]
     x, y, w, h = cv2.boundingRect(contorno_pregunta)
-    roi_pregunta = img_gris[y:y+h, x:x+w]  # Recortar la región de interés
+    roi_pregunta = img_umbralizada[y:y+h, x:x+w]  # Recortar la región de interés
     
     plt.imshow(roi_pregunta, cmap='gray')
     plt.title(f'Pregunta número {index_pregunta}')
@@ -83,17 +84,18 @@ def recortar_pregunta_por_indice(index_pregunta, contornos_ordenados, img_gris, 
     return roi_pregunta
 
 # Función para detectar la línea horizontal y recortar la región de respuesta
-def detectar_linea_y_recortar_respuesta(roi_pregunta, thresh=128, maxval=255):
-    _, img_umbralizada = cv2.threshold(roi_pregunta, thresh=thresh, maxval=maxval, type=cv2.THRESH_BINARY)
-    contornos, _ = cv2.findContours(img_umbralizada, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+def detectar_linea_y_recortar_respuesta(roi_pregunta):
+    contornos, _ = cv2.findContours(roi_pregunta, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
     contornos_ordenados = sorted(contornos, key=cv2.contourArea, reverse=True)
     
-    contorno_linea = contornos_ordenados[1]  # Asumimos que el segundo contorno es la línea horizontal
+    contorno_linea = contornos_ordenados[1]  # El segundo contorno es la línea horizontal
     x, y, w, h = cv2.boundingRect(contorno_linea)
     
     # Recortamos desde la línea hacia arriba
     roi_respuesta = roi_pregunta[0:y, x:x+w]
-    
+
+    roi_respuesta =  roi_respuesta[::-1,]
+
     plt.imshow(roi_respuesta, cmap='gray')
     plt.show()
     
@@ -122,32 +124,15 @@ def recortar_parte_superior(index_pregunta, index_pregunta_superior, contornos_o
 -------------------------------------------------------------------------------------------
 """#aca ver como cortar la parte que contiene la letrad
 
-letrad = detectar_linea_y_recortar_respuesta(roi_pregunta_1)
 
-def ajustar_recorte_respuesta(recorte_respuesta):
-    x, y, w, h = cv2.boundingRect(recorte_respuesta)
-    ajuste = recorte_respuesta[y+h-35:y+h,x:x+w]
-    plt.imshow(ajuste, cmap='gray')
-    plt.show()
-    return x, y, w, h
 
-ajustar_recorte_respuesta(letraa)
-
-letraa.shape
-letrad.shape
-letrab.shape
-
-plt.imshow(letraa, cmap='gray')
-plt.show()"""
+"""
 -------------------------------------------------------------------------------------------
 
 def detectar_letra(recorte_respuesta):
-    # Convertir a imagen binaria
-    _, thresh_img = cv2.threshold(recorte_respuesta, thresh=128, maxval=255, type=cv2.THRESH_BINARY)
-
     # Conectar componentes
     connectivity = 8  # Conexión de 8 vecinos
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh_img, connectivity, cv2.CV_32S)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(recorte_respuesta, connectivity, cv2.CV_32S)
 
     # Revisar si hay más de una componente conectada (excluyendo el fondo)
     if num_labels <= 1:  # Solo hay fondo
@@ -158,10 +143,10 @@ def detectar_letra(recorte_respuesta):
         return 0  # Hay más de una letra o ruido
 
     # Obtener el rectángulo delimitador de la única letra
-    x, y, w, h = stats[1][:4]  # stats[1] porque stats[0] es el fondo
+    x, y, w, h = stats[0][:4]  # stats[1] porque stats[0] es el fondo
 
     # Recortar la imagen de la letra desde la imagen binaria original
-    letra_recortada = thresh_img[y:y+h, x:x+w]  # Aquí se realiza el recorte correcto
+    letra_recortada = recorte_respuesta[y:y+h, x:x+w]  # Aquí se realiza el recorte correcto
 
     return letra_recortada  # Devolvemos la letra recortada
 
@@ -209,14 +194,14 @@ def correccion_examen(examen):
     # Diccionario para mapear las preguntas con los índices de contornos
     dicc_indices = {1: 6, 2: 5, 3: 4, 4: 3, 5: 12, 6: 7, 7: 11, 8: 8, 9: 9, 10: 10}
 
-    img_gris, img_umbralizada = cargar_y_umbralizar_imagen(examen)
-    contornos_ordenados = obtener_y_dibujar_contornos(img_umbralizada, cv2.imread(ruta_imagen))
+    img, img_umbralizada = umbralizar_imagen(examen)
+    contornos_ordenados = obtener_y_dibujar_contornos(img_umbralizada,img,grosor=1)
     
     respuestas_correctas = {1: "C", 2: "B", 3: "A", 4: "D", 5: "B", 6: "B", 7: "A", 8: "B", 9: "D", 10: "D"}
 
     for i in range(1, 11):  # Iteramos por todas las preguntas
         # Paso 3: Recortar una pregunta específica
-        pregunta = recortar_pregunta_por_indice(i, contornos_ordenados, img_gris, dicc_indices)
+        pregunta = recortar_pregunta_por_indice(i, contornos_ordenados, img_umbralizada, dicc_indices)
 
         if pregunta is None:
             print(f"Pregunta {i}: No se pudo recortar.")
@@ -240,71 +225,45 @@ def correccion_examen(examen):
     return
 
 
-ruta_imagen = 'examen_3.png'
-correccion_examen(ruta_imagen)
 
 
+
+img_gris, img_umbralizada = umbralizar_imagen(img5,thresh=128)
+
+contornos_ordenados = obtener_y_dibujar_contornos(img_umbralizada, img5)
 
 dicc_indices = {1: 6, 2: 5, 3: 4, 4: 3, 5: 12, 6: 7, 7: 11, 8: 8, 9: 9, 10: 10}
-ruta_imagen = 'examen_3.png'
-# Paso 1: Cargar la imagen y aplicar umbral
-img_gris, img_umbralizada = cargar_y_umbralizar_imagen(ruta_imagen)
-# Paso 2: Obtener y dibujar los contornos
-contornos_ordenados = obtener_y_dibujar_contornos(img_umbralizada, cv2.imread(ruta_imagen))
-# Paso 5: Recortar la parte superior de una pregunta (ejemplo con pregunta 1 y 6)
-recorte_superior = recortar_parte_superior(1, 6, contornos_ordenados, cv2.imread(ruta_imagen), dicc_indices)
+
+pregunta = recortar_pregunta_por_indice(4, contornos_ordenados, img_umbralizada, dicc_indices)
+
+respuesta = detectar_linea_y_recortar_respuesta(pregunta)
+"""
+respuesta.all(axis=0)               # any() devuelve TRUE si aunque sea un elemento es != 0. 
+np.argwhere(np.logical_not(respuesta.all(axis=0)))  
+# argwhere() devuelve los índices del vector de entrada donde el valor es TRUE.
+
+respuesta.any(axis=1)               
+"""
+
+img_zeros = respuesta==0
+
+img_row_zeros = img_zeros.any(axis=1)
+
+img_row_zeros_idxs = np.argwhere(np.logical_not(respuesta.all(axis=1))) # Tengo los indices de los renglones
+
+plt.figure(), plt.plot(img_row_zeros), plt.show()
 
 
-# Función para cargar la imagen y aplicar umbral
-# Aplicar umbral directamente a una imagen ya en memoria (en escala de grises)
-def umbralizar_imagen(img, thresh=128, maxval=255):
-    if len(img.shape) == 3:  # Si la imagen está en color, conviértela a escala de grises
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    _, img_umbralizada = cv2.threshold(img, thresh=thresh, maxval=maxval, type=cv2.THRESH_BINARY)
-    return img, img_umbralizada
+xr = img_row_zeros*(respuesta.shape[1]-1)     # Generamos valores en el eje x (el eje que apunta hacia la derecha) --> dos posibles valores: 0 o el ancho de la imagen (cantidad de columnas de la imagen -1).
+yr = np.arange(respuesta.shape[0])            # Generamos valores en el eje y (el eje que apunta hacia abajo) --> Vector que arranca en 0, aumenta de a 1 y llega hasta la cantidad de filas de la imagen [0, 1, ..., N_filas-1]
+plt.figure(), plt.imshow(respuesta, cmap='gray'), plt.plot(xr, yr, c='r'), plt.title("Renglones"), plt.show(block=False)                    
 
-# Si ya tienes la imagen recortada (recorte_superior):
-img_g, img_u = umbralizar_imagen(recorte_superior)
+x = np.diff(img_row_zeros)          
+renglones_indxs = np.argwhere(x)    # Esta variable contendrá todos los inicios y finales de los renglones
+len(renglones_indxs)  
 
-# Ahora img_g es la imagen en escala de grises (si era necesario convertirla)
-# img_u es la imagen umbralizada
+np.argwhere(img_row_zeros)[0]
 
-plt.imshow(img_g)
-plt.show()
-plt.imshow(img_u)
-plt.show()
+inicio_renglon = np.argwhere(np.diff(img_row_zeros))[0]
 
-# Función para obtener y dibujar contornos en la imagen
-def obtener_y_dibujar_contornos_superior(img_umbralizada, img_color, grosor=1):
-    contornos, _ = cv2.findContours(img_umbralizada, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-    contornos_ordenados = sorted(contornos, key=cv2.contourArea, reverse=True)
-    
-    for i, contorno in enumerate(contornos_ordenados[:4]):  # Limitar a 13 contornos para simplificar
-        color = (255, 0, 0) if i == 0 else (0, 255, 0)  # Usamos colores diferentes
-        cv2.drawContours(img_color, contornos_ordenados, contourIdx=i, color=color, thickness=grosor)
-    
-    plt.imshow(img_color)
-    plt.show()
-    
-    return contornos_ordenados
-
-def recortar_encabezado_por_indice(index_pregunta, contornos_ordenados, img_gris, dicc_indices):
-    if index_pregunta not in dicc_indices:
-        return None
-    
-    contorno_pregunta = contornos_ordenados[dicc_indices[index_pregunta]]
-    x, y, w, h = cv2.boundingRect(contorno_pregunta)
-    roi_pregunta = img_gris[y:y+h, x:x+w]  # Recortar la región de interés
-    
-    plt.imshow(roi_pregunta, cmap='gray')
-    plt.title(f'Pregunta número {index_pregunta}')
-    plt.show()
-    
-    return roi_pregunta
-
-contorno_sup = obtener_y_dibujar_contornos_superior(img_u,img_g)
-
-recortar_pregunta_por_indice(3, contorno_sup, img_gris, dicc_indices)
-
-recortar_pregunta_por_indice(3, contorno_sup, img_gris, dicc_indices)
+fin_renglon = np.argwhere(np.diff(img_row_zeros))[1]+1
