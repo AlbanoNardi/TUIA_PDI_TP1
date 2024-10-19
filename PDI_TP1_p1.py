@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from PIL.ExifTags import TAGS
 
+""" Análisis
+
 # Lectura de información de la imagen
 
 img2 = Image.open('Imagen_con_detalles_escondidos.tif')
@@ -31,7 +33,7 @@ N_pix_vals = len(np.unique(img))    # 15 valores distintos
 
 plt.imshow(img, cmap='gray')
 plt.show()
-
+"""
 
 
 # Funcion que toma como parámetro el tamaño del kernel y la imagen a ecualizar
@@ -60,4 +62,13 @@ def kernel_histogram_equalization(img, M, N):
     plt.show()
     return
 
-kernel_histogram_equalization(img,75,75)
+
+
+def main():
+
+    img = cv2.imread('Imagen_con_detalles_escondidos.tif',cv2.IMREAD_GRAYSCALE)  
+    
+    kernel_histogram_equalization(img,32,32)
+
+if __name__ == "__main__":
+    main()

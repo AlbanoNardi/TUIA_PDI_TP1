@@ -1,18 +1,9 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
-from PIL.ExifTags import TAGS
 
-# Cargamos imgs
-
-img1 = cv2.imread('examen_1.png',cv2.IMREAD_GRAYSCALE)  
-img2 = cv2.imread('examen_2.png',cv2.IMREAD_GRAYSCALE)  
-img3 = cv2.imread('examen_3.png',cv2.IMREAD_GRAYSCALE)  
-img4 = cv2.imread('examen_4.png',cv2.IMREAD_GRAYSCALE)  
-img5 = cv2.imread('examen_5.png',cv2.IMREAD_GRAYSCALE)  
-
-lista_imgs = [img1,img2,img3,img4,img5]
+"""
+    # Análisis
 
 for i in range(0,5):
     type(lista_imgs[i])
@@ -39,11 +30,11 @@ for i in range(0,5):
 
 
 for i in range(0,5):
-    N_pix_vals = len(np.unique(lista_imgs[i]))
+    N_pix_vals = len(np.unique(lista_imgs[i]))"""
 
-plt.subplot(121), plt.imshow(img1, cmap = 'gray'), plt.title('Examen1'), plt.xticks([]), plt.yticks([])
+"""plt.subplot(121), plt.imshow(img1, cmap = 'gray'), plt.title('Examen1'), plt.xticks([]), plt.yticks([])
 plt.subplot(122), plt.imshow(img2, cmap = 'gray'), plt.title('Examen2'), plt.xticks([]), plt.yticks([])
-plt.show()
+plt.show()"""
 
 ######################################################################################################
 
@@ -101,9 +92,9 @@ def detectar_linea_y_recortar_respuesta(pregunta):
 
     renglones_indxs = np.argwhere(start_end) # indices de los mismos
 
-    start_idx = int(renglones_indxs[0])
+    start_idx = (renglones_indxs[0]).item()
 
-    end_idx = int(renglones_indxs[1])
+    end_idx = (renglones_indxs[1]).item()
 
     respuesta = respuesta[start_idx:end_idx+1, :] # cortamos el sector respuesta
 
@@ -237,12 +228,13 @@ def contar_caracteres(img_palabra):
 
     for i in range(1,len(renglones_indxs)-1,2):
 
-        if (int(renglones_indxs[i+1]) - int(renglones_indxs[i])) > 5:
-            espacios = espacios + 1
+        if (renglones_indxs[i+1].item() - renglones_indxs[i].item()) > 5:
+
+            espacios+=1
 
     return cantidad_letras,espacios
 
-def correccion_examen(examen):
+def correccion_examen(examen, verbose=True):
     # Diccionario para mapear las preguntas con los índices de contornos
     dicc_indices = {1: 6, 2: 5, 3: 4, 4: 3, 5: 12, 6: 7, 7: 11, 8: 8, 9: 9, 10: 10}
 
@@ -252,6 +244,8 @@ def correccion_examen(examen):
 
     respuestas_correctas = {1: "C", 2: "B", 3: "A", 4: "D", 5: "B", 6: "B", 7: "A", 8: "B", 9: "D", 10: "D"}
 
+    cantidad_correctas = 0
+
     for i in range(1, 11):  # Iteramos por todas las preguntas
         
         pregunta = recortar_pregunta_por_indice(i, contornos_ordenados, img_umbralizada, dicc_indices)
@@ -259,22 +253,29 @@ def correccion_examen(examen):
         box_respuesta = detectar_linea_y_recortar_respuesta(pregunta)
 
         if box_respuesta is None:
-            print(f'Pregunta {i}: MAL')
+            if verbose:
+                print(f'Pregunta {i}: MAL')
             continue
         
         respuesta = detectar_letra(box_respuesta)
 
         if respuesta is None:
-            print(f'Pregunta {i}: MAL')
+            if verbose:
+                print(f'Pregunta {i}: MAL')
             continue
 
         letra_identificada = identificador_letra(respuesta)
 
         if letra_identificada == respuestas_correctas[i]:
-            print(f'Pregunta {i}: OK')
+            if verbose:
+                print(f'Pregunta {i}: OK')
+            cantidad_correctas += 1
         else:
-            print(f'Pregunta {i}: MAL')
-    return
+            if verbose:
+                print(f'Pregunta {i}: MAL')
+            
+    return cantidad_correctas
+
 
 def correccion_encabezado(examen):
 
@@ -310,4 +311,83 @@ def correccion_encabezado(examen):
         
     return
 
-###############################################################################################################################
+
+####################################################################################################################################################
+
+def save_img(exam_list):
+
+    dict_exam = {} 
+
+    for idx, exam in enumerate(exam_list, start=1):
+
+        name = recortar_encabezado(1, exam)
+
+        cantidad_correctas = correccion_examen(exam, verbose=False)
+
+        if cantidad_correctas >= 6:
+            resultado = "Aprobado"
+        else:
+            resultado = "Desaprobado"
+
+        dict_exam[idx] = (name, resultado)  
+
+
+    altura_crop = dict_exam[1][0].shape[0]  # altura de cada crop, tomamos el primero
+    ancho_crop = dict_exam[1][0].shape[1]   # ancho del crop del nombre
+    margen_vertical = 2                    # espacio entre cada crop
+    
+    altura_imagen = len(exam_list) * (altura_crop + margen_vertical)
+    ancho_imagen = ancho_crop
+    
+    imagen_final = np.ones((altura_imagen, ancho_imagen, 3), dtype=np.uint8) * 255  # creamos una imagen final en blanco con los parametros antes creados
+    
+    y_coor = 0
+    
+    for idx, (crop, resultado) in dict_exam.items():
+
+        crop_color = cv2.cvtColor(crop, cv2.COLOR_GRAY2BGR) # convertimos a una imagen RGB
+       
+        imagen_final[y_coor:y_coor + altura_crop, :ancho_crop] = crop_color # pegamos el crop en la imagen final
+
+        if resultado == "Aprobado":
+            color_borde = (0, 255, 0)  # Verde
+        else:
+            color_borde = (0, 0, 255)  # Rojo
+
+        cv2.rectangle(imagen_final, (0, y_coor), (ancho_crop, y_coor + altura_crop), color_borde, 2) # rectangulo sobre el crop
+
+        y_coor += altura_crop + margen_vertical  # Incrementar vertical para el siguiente nombre
+
+    cv2.imwrite('resultados_examenes.png', imagen_final)
+
+    return
+
+####################################################################################################################################################
+
+def main():
+    # Cargamos las imágenes de los exámenes
+    exam1 = cv2.imread('examen_1.png', cv2.IMREAD_GRAYSCALE)
+    exam2 = cv2.imread('examen_2.png', cv2.IMREAD_GRAYSCALE)
+    exam3 = cv2.imread('examen_3.png', cv2.IMREAD_GRAYSCALE)
+    exam4 = cv2.imread('examen_4.png', cv2.IMREAD_GRAYSCALE)
+    exam5 = cv2.imread('examen_5.png', cv2.IMREAD_GRAYSCALE)
+    
+    exam_list = [exam1, exam2, exam3, exam4, exam5]
+
+    for idx, exam in enumerate(exam_list, start=1):
+        print(f'----- Corrigiendo Examen {idx} -----')
+        
+        # Corrección del encabezado
+        print(f'Corrección del encabezado del Examen {idx}:')
+        correccion_encabezado(exam)
+        
+        # Corrección del cuerpo del examen
+        print(f'\nCorrección del cuerpo del Examen {idx}:')
+        correccion_examen(exam)
+        
+        print(f'----- Fin de la corrección del Examen {idx} -----\n')
+    
+    save_img(exam_list)
+
+if __name__ == "__main__":
+    main()
